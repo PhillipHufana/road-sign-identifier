@@ -9,7 +9,7 @@ PREDICTOR_PATH = os.environ.get(
 )
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
-VID_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".webm", ".m4v"}
+VID_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".webm", ".m4v", ".mov"}
 
 DISPLAY_MAX_W = 960
 APP_TITLE = "Mask + Anonymization (dlib)"

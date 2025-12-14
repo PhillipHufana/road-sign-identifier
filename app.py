@@ -287,6 +287,7 @@ class App:
 
     def _read_frame(self):
         mode = self.source.get("mode", "none")
+
         if mode == "image":
             img = self.source.get("image")
             return img.copy() if img is not None else None
@@ -296,14 +297,25 @@ class App:
             return None
 
         ret, frame = cap.read()
-        if not ret or frame is None:
-            if mode == "video":
+        if ret and frame is not None:
+            return frame
+
+        # ---- End of video: rewind + rewatch ----
+        if mode == "video":
+            try:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = cap.read()
-                if ret and frame is not None:
-                    return frame
-            return None
-        return frame
+            except Exception:
+                pass
+
+            # reset tracking so it re-detects cleanly from start
+            self._reset_tracking()
+
+            # try reading first frame again
+            ret2, frame2 = cap.read()
+            if ret2 and frame2 is not None:
+                return frame2
+
+        return None
 
     def _process_frame(self, frame_bgr):
         self.frame_i += 1
