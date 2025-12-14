@@ -1,15 +1,15 @@
-# config.py
-APP_TITLE = "Filter Frenzy — Game + Evidence Toolkit"
-WINDOW_SIZE = "1680x940"
+import os
 
-FOREST_PACK_DIR = "forest_pack"
-PACKS_ROOT = "packs"
-REPORTS_DIR = "reports"
+# Keep this early (before importing cv2 elsewhere)
+os.environ.setdefault("QT_LOGGING_RULES", "qt.core.qmimedatabase=false;qt.qpa.*=false")
 
-LEVELS = {
-    1: {"name": "Level 1 (Easy)",   "alpha": 0.40, "time": 90},
-    2: {"name": "Level 2 (Medium)", "alpha": 0.55, "time": 70},
-    3: {"name": "Level 3 (Hard)",   "alpha": 0.70, "time": 50},
-}
+PREDICTOR_PATH = os.environ.get(
+    "DLIB_PREDICTOR",
+    r"C:\Users\Phillip\Downloads\shape_predictor_68_face_landmarks.dat"
+)
 
-PARTIAL_SCORE = 680
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
+VID_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".webm", ".m4v"}
+
+DISPLAY_MAX_W = 960
+APP_TITLE = "Mask + Anonymization (dlib)"
