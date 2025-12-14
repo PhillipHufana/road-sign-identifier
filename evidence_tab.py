@@ -55,8 +55,7 @@ class EvidenceTab(ttk.Frame):
         self.rowconfigure(0, weight=1)
 
         ttk.Label(left, text="Community Mode — Evidence Toolkit", style="Title.TLabel").pack(anchor="w", pady=(0, 8))
-        ttk.Label(left, text="Upload a photo. The app checks usability, suggests retake tips, restores, and exports a report.",
-                  style="Body.TLabel", wraplength=320).pack(anchor="w", pady=(0, 12))
+        ttk.Label(left, text="Upload a photo. The app checks usability, suggests retake tips, restores, and exports a report.",style="Body.TLabel", wraplength=320).pack(anchor="w", pady=(0, 12))
 
         # Sector selector
         ttk.Label(left, text="Sector Pack:", style="Body.TLabel").pack(anchor="w")
@@ -102,8 +101,7 @@ class EvidenceTab(ttk.Frame):
         ttk.Button(right, text="Export Report (PNG)", command=self.export_report, style="Accent.TButton").pack(fill="x", pady=(12, 6))
         ttk.Button(right, text="Save Restored Image", command=self.save_restored, style="Accent.TButton").pack(fill="x", pady=(0, 6))
 
-        ttk.Label(right, text="Tip: Reports are saved to /reports/ for easy sharing.",
-                  style="Body.TLabel", wraplength=320).pack(anchor="w", pady=(12, 0))
+        ttk.Label(right, text="Tip: Reports are saved to /reports/ for easy sharing.", style="Body.TLabel", wraplength=320).pack(anchor="w", pady=(12, 0))
 
     def upload_image(self):
         path = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp")])
@@ -180,26 +178,38 @@ class EvidenceTab(ttk.Frame):
             messagebox.showinfo("Info", "Click Restore Now first.")
             return
 
-        from core.report import export_report_png
+        try:
+            from report import export_report_png  # ✅ flat import (matches your project)
+            sector = self.sector_var.get()
+            location = self.location_var.get().strip()
+            notes = self.notes_box.get("1.0", "end").strip()
 
-        sector = self.sector_var.get()
-        location = self.location_var.get()
-        notes = self.notes_box.get("1.0", "end").strip()
+            before_pil = bgr_to_pil(self.img_uploaded)
+            after_pil = bgr_to_pil(self.img_restored)
 
-        before_pil = bgr_to_pil(self.img_uploaded)
-        after_pil = bgr_to_pil(self.img_restored)
+            out_dir = os.path.abspath(REPORTS_DIR)   # ✅ absolute
+            os.makedirs(out_dir, exist_ok=True)      # ✅ ensure folder exists
 
-        path = export_report_png(
-            out_dir=REPORTS_DIR,
-            sector=sector,
-            location_text=location,
-            notes_text=notes,
-            original_pil=before_pil,
-            restored_pil=after_pil,
-            diagnostics=self.diag or {},
-            recommendations=self.tips or [],
-        )
-        messagebox.showinfo("Report Exported", f"Saved report:\n{path}")
+            path = export_report_png(
+                out_dir=out_dir,
+                sector=sector,
+                location_text=location,
+                notes_text=notes,
+                original_pil=before_pil,
+                restored_pil=after_pil,
+                diagnostics=self.diag or {},
+                recommendations=self.tips or [],
+            )
+
+            messagebox.showinfo("Report Exported ✅", f"Saved report here:\n\n{path}")
+
+            # Optional: open folder now
+            if messagebox.askyesno("Open Folder?", "Open the report folder now?"):
+                os.startfile(os.path.dirname(path))  # Windows
+
+        except Exception as e:
+            messagebox.showerror("Export Failed ❌", f"Export error:\n\n{e}")
+
 
     def save_restored(self):
         if self.img_restored is None:
