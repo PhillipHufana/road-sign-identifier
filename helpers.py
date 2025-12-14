@@ -1,7 +1,19 @@
-# ui_helpers.py
+# ui/helpers.py
 import tkinter as tk
 import cv2
 from PIL import Image, ImageTk
+
+def to_tk(img_bgr, max_w=650, max_h=420):
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    h, w = img_rgb.shape[:2]
+    scale = min(max_w / w, max_h / h, 1.0)
+    nw, nh = int(w * scale), int(h * scale)
+    img_resized = cv2.resize(img_rgb, (nw, nh), interpolation=cv2.INTER_AREA)
+    return ImageTk.PhotoImage(Image.fromarray(img_resized))
+
+def bgr_to_pil(img_bgr):
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(img_rgb)
 
 def draw_gradient(canvas: tk.Canvas, w: int, h: int, c1: str, c2: str):
     canvas.delete("all")
@@ -33,14 +45,6 @@ def set_group_state(canvas: tk.Canvas, state: str):
         draw_gradient(canvas, 380, 110, "#b71c1c", "#ef5350")
     else:
         draw_gradient(canvas, 380, 110, "#2b2b2b", "#1f1f1f")
-
-def to_tk(img_bgr, max_w=620, max_h=260):
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    h, w = img_rgb.shape[:2]
-    scale = min(max_w / w, max_h / h, 1.0)
-    nw, nh = int(w * scale), int(h * scale)
-    img_resized = cv2.resize(img_rgb, (nw, nh), interpolation=cv2.INTER_AREA)
-    return ImageTk.PhotoImage(Image.fromarray(img_resized))
 
 def nice_label(key: str) -> str:
     mapping = {

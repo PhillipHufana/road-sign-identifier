@@ -1,6 +1,10 @@
 # config.py
+APP_TITLE = "Filter Frenzy — Game + Evidence Toolkit"
+WINDOW_SIZE = "1680x940"
 
 FOREST_PACK_DIR = "forest_pack"
+PACKS_ROOT = "packs"
+REPORTS_DIR = "reports"
 
 LEVELS = {
     1: {"name": "Level 1 (Easy)",   "alpha": 0.40, "time": 90},
@@ -9,12 +13,3 @@ LEVELS = {
 }
 
 PARTIAL_SCORE = 680
-
-FOREST_FACTS = [
-    "Noisy satellite images can hide early signs of deforestation.",
-    "Clear aerial images help detect illegal logging faster.",
-    "Good image quality supports forest monitoring and biodiversity protection.",
-    "Restored images can reveal land-clearing patterns that are easy to miss.",
-    "Sharper drone footage helps map forest loss more accurately over time.",
-    "Reducing blur in aerial images helps identify roads linked to forest encroachment."
-]
