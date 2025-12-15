@@ -4,6 +4,7 @@ import dlib
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from collections import Counter, deque
 
 from config import APP_TITLE, DISPLAY_MAX_W
 from dlib_models import load_dlib_models
@@ -90,6 +91,23 @@ class App:
         self.tracks = []
         self.next_id = 1
 
+        
+        # ---- Stability knobs ----
+        self.cls_hist_len = 9              # vote window (7–11 is typical)
+        self.cls_change_ratio = 0.70       # need >=70% votes to switch stable label
+        self.hyst_color = 0.03             # +/- to thr_*_color when switching states
+        self.hyst_nv = 0.05                # +/- to thr_*_nv when switching states
+
+        # per-track state: tid -> {hist, stable, last_seen}
+        self.track_states = {}
+
+        # ---- Denoise performance knobs ----
+        self.denoise_every_n = 4           # compute denoise once every N frames
+        self._denoise_cache = None
+        self._denoise_cache_frame_i = -10**9
+
+
+
         self.lut_cache = {"gamma": None, "lut": None}
         self.nv_mode = "auto"  # "auto" | "nv" | "color"
 
@@ -140,15 +158,43 @@ class App:
         self.on_webcam(silent=True)
         self.root.after(15, self.tick)
 
-   # -------------------------
-    # Scrolling Helper
-    # -------------------------
-    def _fix_advanced_scrollregion(self):
-        try:
-            self.advanced_scroller.inner.update_idletasks()
-            self.advanced_scroller.canvas.configure(scrollregion=self.advanced_scroller.canvas.bbox("all"))
-        except Exception:
-            pass
+    def _get_track_state(self, tid: int):
+        st = self.track_states.get(tid)
+        if st is None:
+            st = {"hist": deque(maxlen=self.cls_hist_len), "stable": None, "last_seen": self.frame_i}
+            self.track_states[tid] = st
+        return st
+
+    def _stable_class_update(self, tid: int, raw_cls: str) -> str:
+        st = self._get_track_state(tid)
+        st["hist"].append(raw_cls)
+        st["last_seen"] = self.frame_i
+
+        counts = Counter(st["hist"])
+        maxc = max(counts.values())
+        winners = [k for k, v in counts.items() if v == maxc]
+
+        prev = st["stable"]
+        # tie-break: keep previous stable if possible
+        maj = winners[0] if len(winners) == 1 else (prev if prev in winners else winners[0])
+
+        # vote-hysteresis: require strong majority to switch
+        if prev is None:
+            st["stable"] = maj
+        elif maj != prev:
+            need = max(1, int(len(st["hist"]) * self.cls_change_ratio + 0.999))
+            if maxc >= need:
+                st["stable"] = maj
+
+        return st["stable"]
+
+    def _purge_track_states(self):
+        # drop states for tracks not seen recently (prevents unbounded growth)
+        ttl = max(30, int(round(self.detect_every.get())) * 3)  # frames
+        dead = [tid for tid, st in self.track_states.items() if (self.frame_i - st.get("last_seen", 0)) > ttl]
+        for tid in dead:
+            self.track_states.pop(tid, None)
+
 
 
     # -------------------------
@@ -419,6 +465,8 @@ class App:
 
             self.last_frame_out = make_placeholder("Loading media...")
             self._refresh_preview()
+            self._denoise_cache = None
+            self._denoise_cache_frame_i = -10**9
 
             self.source = open_media(path)
             self._reset_tracking()
@@ -439,8 +487,10 @@ class App:
         self.paused = False
         self._stop_recording()
         self._release_source()
-
+        
         self.last_frame_out = make_placeholder("Opening webcam...")
+        self._denoise_cache = None
+        self._denoise_cache_frame_i = -10**9
         self._refresh_preview()
 
         cap, label = open_camera()
@@ -509,6 +559,9 @@ class App:
         self.tracks = []
         self.next_id = 1
         self.frame_i = 0
+        self.track_states.clear()
+        
+
 
     def _release_source(self):
         cap = self.source.get("cap")
@@ -646,7 +699,22 @@ class App:
         if self.var_enh.get() == 1:
             proc = enhance_clahe(proc)
         if self.var_den.get() == 1:
-            proc = restore_denoise(proc)
+            # For still images: compute once and reuse forever
+            if self.source.get("mode") == "image":
+                if self._denoise_cache is None:
+                    self._denoise_cache = restore_denoise(proc)
+                proc = self._denoise_cache.copy()
+            else:
+                # For video/webcam: compute every N frames, reuse in-between
+                if (self._denoise_cache is None) or ((self.frame_i - self._denoise_cache_frame_i) >= self.denoise_every_n):
+                    self._denoise_cache = restore_denoise(proc)
+                    self._denoise_cache_frame_i = self.frame_i
+                proc = self._denoise_cache.copy()
+        else:
+            # denoise disabled -> clear cache so it re-inits cleanly next time
+            self._denoise_cache = None
+            self._denoise_cache_frame_i = -10**9
+
         if self.var_ush.get() == 1:
             proc = restore_unsharp(proc)
 
@@ -694,12 +762,42 @@ class App:
             shape = self.predictor(gray, rect)
             pts = np.array([[shape.part(i).x, shape.part(i).y] for i in range(68)], dtype=np.int32)
 
-            cls = (
-                classify_mask_nightvision(frame_original, pts, thr_mouth_nv, thr_nose_nv)
+            # -----------------------------
+            # NEW: hysteresis + smoothing
+            # -----------------------------
+            st = self._get_track_state(t.tid)
+            prev_stable = st.get("stable") or ""
+
+            # base thresholds from sliders (already computed above, but safe to use here too)
+            # thr_mouth_c, thr_nose_c, thr_mouth_nv, thr_nose_nv should exist from above.
+
+            if prev_stable == "MASK":
+                # if we're already MASK, make it harder to leave MASK
+                mC = thr_mouth_c + self.hyst_color
+                nC = thr_nose_c  + self.hyst_color
+                mN = thr_mouth_nv + self.hyst_nv
+                nN = thr_nose_nv  + self.hyst_nv
+            else:
+                # if we're not MASK, make it easier to become MASK
+                mC = max(0.00, thr_mouth_c - self.hyst_color)
+                nC = max(0.00, thr_nose_c  - self.hyst_color)
+                mN = max(0.00, thr_mouth_nv - self.hyst_nv)
+                nN = max(0.00, thr_nose_nv  - self.hyst_nv)
+
+            raw_cls = (
+                classify_mask_nightvision(frame_original, pts, mN, nN)
                 if use_nv
-                else classify_mask_color(frame_original, pts, thr_mouth_c, thr_nose_c)
+                else classify_mask_color(frame_original, pts, mC, nC)
             )
 
+            # vote smoothing + vote-hysteresis
+            cls = self._stable_class_update(t.tid, raw_cls)
+
+            
+
+            # -----------------------------
+            # rest of your code unchanged
+            # -----------------------------
             if cls == "MASK":
                 masked += 1
             elif cls == "INCORRECT":
@@ -721,6 +819,8 @@ class App:
             if self.show_landmarks.get() == 1:
                 for (px, py) in pts:
                     cv2.circle(out, (int(px), int(py)), 1, (255, 0, 0), -1)
+        
+        self._purge_track_states()
 
         mode_txt = "NV" if use_nv else "COLOR"
         src_txt = self.source.get("label", self.source.get("mode", ""))
@@ -733,3 +833,4 @@ class App:
         if return_use_nv:
             return out, use_nv
         return out
+    
